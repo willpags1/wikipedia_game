@@ -2,17 +2,36 @@ from bs4 import BeautifulSoup
 from urllib.request import urlparse, urljoin
 import requests
 import time
-from multiprocessing import Process, Queue
+from threading import Lock, Thread
+from queue import Queue
+import sys
 
 # var that checks if we've visited this before
 internal_urls = set()
+page_queue = Queue()
+MAX_STEPS = 10
+global MASTER_COMPLETE
+MASTER_COMPLETE = False
 
-MAX_STEPS = 5
+def worker():
+    item = page_queue.get()
+    if not MASTER_COMPLETE:
+        wikipedia_game(item[0],item[1],item[2],item[3])
+    page_queue.task_done()
+
+
 
 # start and end are both urls
 def wikipedia_game(start, end, path, steps):
+    # exit condition here
+    global MASTER_COMPLETE
+    if MASTER_COMPLETE:
+        return
+    
     links = get_all_website_links(start)
     if end in links:
+        print(path + ' ->\n' + end)
+        MASTER_COMPLETE = True
         return path + ' ->\n' + end
     
     elif len(links) == 0 or steps > MAX_STEPS:
@@ -21,9 +40,7 @@ def wikipedia_game(start, end, path, steps):
         return None
     else:
         for link in links:
-            response = wikipedia_game(link, end, path + ' ->\n'+ link, steps + 1)
-            if response:
-                return response
+            page_queue.put([link , end , path + ' ->\n' + link, steps+1])
 
 
 def is_valid(url):
@@ -70,16 +87,16 @@ def get_all_website_links(url):
         internal_urls.add(href)
     return urls
 
-s = 'https://en.wikipedia.org/wiki/St._Louis_Lambert_International_Airport'
+s = 'https://en.wikipedia.org/wiki/Dark_Souls'
 
-e = 'https://en.wikipedia.org/wiki/Quark'
+e = 'https://en.wikipedia.org/wiki/Fish_finger'
 
-
+page_queue.put([s,e,s,0])
 start_time = time.time()
-print('Max Steps:', MAX_STEPS)
+while not MASTER_COMPLETE:
+    # while not page_queue.empty():
+        Thread(target=worker, daemon=True).start()
 
-print('\n')
-print(wikipedia_game(s,e,s,0))
-print('\n')
 print(time.time() - start_time, 'Seconds')
-internal_urls = set()
+    
+
